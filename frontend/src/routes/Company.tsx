@@ -16,6 +16,11 @@ import {
   Skeleton,
 } from "../components/bits";
 
+/** How far out the network walk goes. The ceiling the API allows, because a
+ *  shallower picture hides exactly the links worth seeing. The row limit on
+ *  the other side keeps it from turning into soup. */
+const GRAPH_DEPTH = 4;
+
 export function Company() {
   const { idno = "" } = useParams();
 
@@ -27,8 +32,8 @@ export function Company() {
   });
 
   const graph = useQuery({
-    queryKey: ["ego-graph", idno],
-    queryFn: () => api.companyGraph(idno),
+    queryKey: ["ego-graph", idno, GRAPH_DEPTH],
+    queryFn: () => api.companyGraph(idno, GRAPH_DEPTH),
     enabled: company.isSuccess,
   });
 
@@ -184,7 +189,12 @@ export function Company() {
         <section className="section">
           <div className="head">
             <h2 className="head__title">Rețeaua firmei</h2>
-            <span className="eyebrow">{describeGraph(graph.data, idno)}</span>
+            <span className="eyebrow">
+              {describeGraph(graph.data, idno)}
+              {graph.data.truncated && " · prea mare, arăt doar o parte"}
+              {graph.data.source === "postgres" &&
+                " · graful nu răspunde, doar primul pas"}
+            </span>
           </div>
 
           {touches.length > 0 ? (

@@ -164,4 +164,9 @@ export interface Graph {
   nodes: GraphNode[];
   links: GraphLink[];
   truncated: boolean;
+  /** How many hops out the walk went. */
+  depth: number;
+  /** `neo4j` normally. `postgres` means the graph store was unreachable and
+   *  the one-hop SQL query stood in. */
+  source: "neo4j" | "postgres";
 }

@@ -166,8 +166,10 @@ export const api = {
 
   company: (idno: string) => request<Company>(`/companies/${idno}`),
 
-  /** One company's neighbourhood: its parties, and where else they sit. */
-  companyGraph: (idno: string) => request<Graph>(`/companies/${idno}/graph`),
+  /** One company's neighbourhood: its parties, and where else they sit.
+   *  `depth` is how many hops out to walk, which neo4j answers and SQL cannot. */
+  companyGraph: (idno: string, depth = 2) =>
+    request<Graph>(`/companies/${idno}/graph`, { query: { depth } }),
 
   statement: (idno: string, year: number, source?: string) =>
     request<Statement>(`/companies/${idno}/statements/${year}`, {

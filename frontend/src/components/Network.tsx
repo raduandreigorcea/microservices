@@ -333,7 +333,10 @@ export function Network({
             {count(selected.degree)} legături
             {selected.role ? ` · ${selected.role.toLowerCase()}` : ""}
           </p>
-          {selected.idno && selected.id !== focus && (
+          {/* Only a company we actually hold has a page. A shareholder the
+              source could not give an IDNO for carries a hashed key instead,
+              and linking to it lands on a 404. */}
+          {selected.kind === "company" && selected.id !== focus && (
             <Link className="btn" to={`/companies/${selected.idno}`} viewTransition>
               deschide firma
             </Link>

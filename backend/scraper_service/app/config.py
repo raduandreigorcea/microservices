@@ -7,6 +7,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
+from neo4j import AsyncDriver, AsyncGraphDatabase
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis
@@ -62,6 +63,21 @@ class Settings(BaseSettings):
     request_max_attempts: int = Field(default=3, ge=1)
     request_backoff_seconds: float = Field(default=2.0, ge=0)
 
+    # --- neo4j ---
+    # The relationship graph is projected here after every transform. Postgres
+    # stays the source of truth; this is a read model that can be rebuilt.
+    neo4j_uri: str = "bolt://neo4j:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = ""
+    neo4j_database: str = "neo4j"
+    # How deep a caller may walk out from one company.
+    graph_max_depth: int = Field(default=4, ge=1, le=8)
+
+    @property
+    def neo4j_enabled(self) -> bool:
+        """No password, no graph. The SQL fallback serves the graph instead."""
+        return bool(self.neo4j_password)
+
     # --- jobs ---
     sweep_page_size: int = Field(default=50, ge=1, le=200)
     # A sweep asks for this many pages unless the caller says otherwise.
@@ -91,6 +107,11 @@ def get_redis_client(redis_url: str) -> Redis:
     return Redis.from_url(redis_url, decode_responses=True)
 
 
+@lru_cache
+def get_driver(uri: str, user: str, password: str) -> AsyncDriver:
+    return AsyncGraphDatabase.driver(uri, auth=(user, password))
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
@@ -104,5 +125,13 @@ async def get_redis(settings: SettingsDep) -> Redis:
     return get_redis_client(settings.redis_url)
 
 
+async def get_neo4j(settings: SettingsDep) -> AsyncDriver | None:
+    """None when neo4j is not configured, which callers treat as "fall back"."""
+    if not settings.neo4j_enabled:
+        return None
+    return get_driver(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
+
+
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 RedisDep = Annotated[Redis, Depends(get_redis)]
+DriverDep = Annotated["AsyncDriver | None", Depends(get_neo4j)]
