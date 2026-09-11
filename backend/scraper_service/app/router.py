@@ -2,25 +2,31 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import text
 
-from app import repository, service
-from app.config import RedisDep, SessionDep, SettingsDep
+from app import graph_queries, graph_store, repository, service
+from app.config import DriverDep, RedisDep, SessionDep, SettingsDep
+from app.graph_store import GraphUnavailable
 from app.models import FINAL_STATUSES, MODE_IDNO_LIST, MODE_SWEEP
 from app.schemas import (
     CompanyPage,
     CompanyRead,
     GraphRead,
     JobRead,
+    PathRead,
+    ReprojectRead,
     ScrapeByIdnoRequest,
     SourceDataRead,
     StatementRead,
     SweepRequest,
 )
 from app.service import ReadCaller, ScrapeRunner, WriteCaller
+
+log = logging.getLogger("scraper")
 
 health_router = APIRouter(tags=["health"])
 scrape_router = APIRouter(prefix="/scrape", tags=["scrape"])
@@ -149,6 +155,45 @@ async def cancel_job(
     return job
 
 
+@scrape_router.post("/reproject", response_model=ReprojectRead)
+async def reproject_graph(
+    session: SessionDep,
+    driver: DriverDep,
+    settings: SettingsDep,
+    caller: WriteCaller,
+) -> ReprojectRead:
+    """Rebuilds the whole neo4j graph from `transformed_data`.
+
+    The projection is disposable by design, so this is how it comes back after
+    an empty neo4j, a lost volume, or a change to the graph model.
+    """
+    if driver is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="the graph store is not configured",
+        )
+    companies = await repository.companies_with_people(session)
+    try:
+        await graph_store.ensure_constraints(driver, settings.neo4j_database)
+        for company in companies:
+            await graph_store.project_company(
+                driver,
+                settings.neo4j_database,
+                idno=company.idno,
+                name=company.name,
+                people=company.people,
+            )
+    except GraphUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="the graph store could not be reached",
+        ) from exc
+    return ReprojectRead(
+        companies=len(companies),
+        message=f"projected {len(companies)} companies into neo4j",
+    )
+
+
 # --- transformed data -------------------------------------------------------
 
 
@@ -181,14 +226,79 @@ async def read_company(idno: str, session: SessionDep, caller: ReadCaller):
 async def company_ego_graph(
     idno: str,
     session: SessionDep,
+    driver: DriverDep,
+    settings: SettingsDep,
     caller: ReadCaller,
+    depth: int = Query(default=2, ge=1, le=4),
     limit: int = Query(default=200, ge=1, le=1000),
 ) -> GraphRead:
-    """This company, the parties behind it, and where else those parties sit."""
+    """This company, the parties behind it, and where else those parties sit.
+
+    Answered from neo4j, which is what makes `depth` more than one possible.
+    If neo4j is not there, the one-hop SQL query stands in and says so.
+    """
+    if driver is not None:
+        try:
+            nodes, links, truncated = await graph_queries.ego_graph(
+                driver,
+                settings.neo4j_database,
+                idno=idno,
+                depth=depth,
+                limit=limit,
+                max_depth=settings.graph_max_depth,
+            )
+            return GraphRead(
+                nodes=nodes,
+                links=links,
+                truncated=truncated,
+                depth=depth,
+                source="neo4j",
+            )
+        except GraphUnavailable as exc:
+            log.warning("graph for %s fell back to postgres: %s", idno, exc)
+
     edges = await repository.graph_edges(session, idno=idno, limit=limit + 1)
     truncated = len(edges) > limit
     nodes, links = service.build_graph(edges[:limit])
-    return GraphRead(nodes=nodes, links=links, truncated=truncated)
+    return GraphRead(
+        nodes=nodes, links=links, truncated=truncated, depth=1, source="postgres"
+    )
+
+
+@companies_router.get("/{idno}/path/{other_idno}", response_model=PathRead)
+async def company_path(
+    idno: str,
+    other_idno: str,
+    driver: DriverDep,
+    settings: SettingsDep,
+    caller: ReadCaller,
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> PathRead:
+    """The shortest chain of holdings joining two companies.
+
+    There is no SQL fallback for this one: it is the query the relational
+    shape could not answer without recursion, which is why neo4j is here.
+    """
+    if driver is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="the graph store is not configured",
+        )
+    try:
+        nodes, links = await graph_queries.shortest_path(
+            driver,
+            settings.neo4j_database,
+            idno=idno,
+            other=other_idno,
+            limit=limit,
+            max_depth=settings.graph_max_depth,
+        )
+    except GraphUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="the graph store could not be reached",
+        ) from exc
+    return PathRead(nodes=nodes, links=links, found=bool(links))
 
 
 @companies_router.get("/{idno}/statements/{year}", response_model=StatementRead)

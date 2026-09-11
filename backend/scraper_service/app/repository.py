@@ -292,6 +292,18 @@ async def get_statement(
     return await session.scalar(query.limit(1))
 
 
+async def companies_with_people(session: AsyncSession) -> list[Company]:
+    """Every transformed company and its filed parties.
+
+    This is what a rebuild of the neo4j projection reads, which is the whole
+    reason the projection is allowed to be thrown away.
+    """
+    result = await session.scalars(
+        select(Company).options(selectinload(Company.people)).order_by(Company.idno)
+    )
+    return list(result)
+
+
 # --- ownership graph --------------------------------------------------------
 
 

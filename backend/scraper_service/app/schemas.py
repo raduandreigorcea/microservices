@@ -187,3 +187,20 @@ class GraphRead(BaseModel):
     nodes: list[GraphNode]
     links: list[GraphLink]
     truncated: bool
+    # How many hops out this walk went, and which store answered. `postgres`
+    # means neo4j was unreachable and the one-hop SQL query stood in.
+    depth: int = 1
+    source: str = "neo4j"
+
+
+class PathRead(BaseModel):
+    """The chain of holdings between two companies, drawn like any other graph."""
+
+    nodes: list[GraphNode]
+    links: list[GraphLink]
+    found: bool
+
+
+class ReprojectRead(BaseModel):
+    companies: int
+    message: str

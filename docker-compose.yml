@@ -49,6 +49,33 @@ services:
     networks:
       - backend
 
+  neo4j:
+    image: neo4j:5-community
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD}
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP:-512m}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP:-512m}
+    ports:
+      # 7474 is the browser console, handy for showing the graph by hand.
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      # Substituted by compose, not by the shell in the container: the neo4j
+      # image turns NEO4J_* variables into config settings, so the credentials
+      # must not be passed in as environment.
+      test:
+        - "CMD-SHELL"
+        - "cypher-shell -u '${NEO4J_USER:-neo4j}' -p '${NEO4J_PASSWORD}' 'return 1' || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks:
+      - backend
+
   user_service:
     build: ./backend/user_service
     restart: unless-stopped
@@ -81,6 +108,10 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${SCRAPER_SERVICE_DB_USER}:${SCRAPER_SERVICE_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      NEO4J_DATABASE: ${NEO4J_DATABASE:-neo4j}
       USER_SERVICE_URL: http://user_service:8002
       REQUEST_MIN_INTERVAL_SECONDS: ${SCRAPER_MIN_INTERVAL_SECONDS:-1.0}
       BROWSER_MAX_PAGES: ${SCRAPER_BROWSER_MAX_PAGES:-2}
@@ -97,6 +128,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      neo4j:
         condition: service_healthy
       user_service:
         condition: service_started
@@ -141,9 +174,23 @@ services:
     networks:
       - backend
 
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    # nginx serves the built bundle and proxies /api to the gateway, so the
+    # browser only ever sees one origin.
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      gateway:
+        condition: service_started
+    networks:
+      - backend
+
 volumes:
   postgres_data:
   redis_data:
+  neo4j_data:
 
 networks:
   backend:

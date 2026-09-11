@@ -14,10 +14,11 @@ from typing import Annotated
 import httpx
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, SecurityScopes
+from neo4j import AsyncDriver
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app import repository
+from app import graph_store, repository
 from app.config import RedisDep, Settings, SettingsDep
 from app.logs import job_tag, tag_for
 from app.models import (
@@ -42,7 +43,7 @@ from app.sources import (
     idnos_in_listing,
     total_companies,
 )
-from app.transform import build_company
+from app.transform import CompanyRecord, build_company
 
 log = logging.getLogger("scraper_service.jobs")
 
@@ -173,10 +174,14 @@ class ScrapeRunner:
         settings: Settings,
         browser: BrowserPool,
         session_factory: async_sessionmaker[AsyncSession],
+        driver: AsyncDriver | None = None,
     ) -> None:
         self._settings = settings
         self._browser = browser
         self._session_factory = session_factory
+        # None when neo4j is not configured. The graph endpoint falls back to
+        # SQL in that case, so a missing driver is a degraded mode, not a fault.
+        self._driver = driver
         self.openmoney = OpenMoneySource(settings, browser)
         self.depozitar = DepozitarSource(settings, browser)
         self._tasks: dict[uuid.UUID, asyncio.Task] = {}
@@ -275,9 +280,10 @@ class ScrapeRunner:
             if position < done:
                 continue
             self._check_cancelled(job.id)
-            await self._scrape_company(session, job, idno, include_depozitar)
+            record = await self._scrape_company(session, job, idno, include_depozitar)
             job.cursor = {"done": position + 1}
             await session.commit()
+            await self._project(record)
 
     async def _run_sweep(self, session: AsyncSession, job: ScrapeJob) -> None:
         """Walk the register page by page, committing after every company."""
@@ -317,13 +323,16 @@ class ScrapeRunner:
                 if position < index_in_page:
                     continue
                 self._check_cancelled(job.id)
-                await self._scrape_company(session, job, idno, include_depozitar)
+                record = await self._scrape_company(
+                    session, job, idno, include_depozitar
+                )
                 job.cursor = {
                     "page": page_number,
                     "index": position + 1,
                     "pages_done": pages_done,
                 }
                 await session.commit()
+                await self._project(record)
 
             index_in_page = 0
             page_number += 1
@@ -345,7 +354,7 @@ class ScrapeRunner:
         job: ScrapeJob,
         idno: str,
         include_depozitar: bool,
-    ) -> None:
+    ) -> CompanyRecord | None:
         log.info("company %s start", idno)
         started = time.monotonic()
         before_ok, before_failed = job.requests_ok, job.requests_failed
@@ -368,7 +377,7 @@ class ScrapeRunner:
                 log.warning("  %s index unavailable (%d)", idno, index.fetched.status)
 
         await self._load(session, job, items)
-        await self._transform(session, idno)
+        record = await self._transform(session, idno)
         job.companies_done += 1
         log.info(
             "company %s done ok=%d fail=%d stored=%d in %s",
@@ -377,6 +386,24 @@ class ScrapeRunner:
             job.requests_failed - before_failed,
             job.rows_loaded - before_rows,
             _elapsed(started),
+        )
+        return record
+
+    async def _project(self, record: CompanyRecord | None) -> None:
+        """Mirror one company into neo4j, after Postgres has committed it.
+
+        Order matters: the projection must never describe rows that were then
+        rolled back. A failure here is logged and dropped, because Postgres
+        already holds the truth and `POST /scrape/reproject` can rebuild this.
+        """
+        if record is None or self._driver is None:
+            return
+        await graph_store.project_quietly(
+            self._driver,
+            self._settings.neo4j_database,
+            idno=record.idno,
+            name=record.fields.get("name"),
+            people=record.people,
         )
 
     async def _load(
@@ -387,7 +414,7 @@ class ScrapeRunner:
         job.requests_ok += sum(1 for item in items if item.ok)
         job.requests_failed += sum(1 for item in items if not item.ok)
 
-    async def _transform(self, session: AsyncSession, idno: str) -> None:
+    async def _transform(self, session: AsyncSession, idno: str) -> CompanyRecord | None:
         record = build_company(
             idno,
             openmoney_company=await repository.latest_body(
@@ -418,8 +445,9 @@ class ScrapeRunner:
                 len(record.people),
                 len(record.statements),
             )
-        else:
-            log.warning("  transform skipped %s, no usable source body", idno)
+            return record
+        log.warning("  transform skipped %s, no usable source body", idno)
+        return None
 
 
 def _elapsed(started: float) -> str:
