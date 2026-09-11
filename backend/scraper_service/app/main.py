@@ -2,24 +2,24 @@
 
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.config import get_engine, get_session_factory, get_settings
+from app.logs import configure_logging
 from app.models import Base
 from app.router import companies_router, health_router, scrape_router
 from app.service import ScrapeRunner
 from app.sources import BrowserPool
-
-logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create this service's own tables on boot. It owns its schema."""
     settings = get_settings()
+    # After uvicorn has set up its own logging, so our filters stick.
+    configure_logging(settings.log_level)
     engine = get_engine(settings.database_url)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)

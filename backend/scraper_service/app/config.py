@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str
 
+    # INFO narrates every request and every page the browser opens. WARNING
+    # leaves only the failures.
+    log_level: str = "INFO"
+
     # Where to check the bearer tokens this service is handed.
     user_service_url: str = "http://user_service:8002"
     introspection_cache_prefix: str = "scraper_service:introspect:"

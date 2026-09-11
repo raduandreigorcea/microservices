@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Annotated
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import repository
 from app.config import RedisDep, Settings, SettingsDep
+from app.logs import job_tag, tag_for
 from app.models import (
     MODE_SWEEP,
     SOURCE_DEPOZITAR,
@@ -222,27 +224,45 @@ class ScrapeRunner:
 
     async def run(self, job_id: uuid.UUID) -> None:
         await self._browser.start()
-        async with self._session_factory() as session:
-            job = await repository.get_job(session, job_id)
-            if job is None:
-                return
-            await repository.mark_job_running(session, job)
-            await session.commit()
+        tag = tag_for(job_id)
+        token = job_tag.set(tag)
+        started = time.monotonic()
+        try:
+            async with self._session_factory() as session:
+                job = await repository.get_job(session, job_id)
+                if job is None:
+                    log.warning("job %s is not in the database, nothing to run", tag)
+                    return
+                await repository.mark_job_running(session, job)
+                await session.commit()
+                log.info("job %s %s start %s", tag, job.mode, json.dumps(job.params))
 
-            status_, error = STATUS_SUCCEEDED, None
-            try:
-                if job.mode == MODE_SWEEP:
-                    await self._run_sweep(session, job)
-                else:
-                    await self._run_idno_list(session, job)
-            except JobCancelled:
-                status_ = STATUS_CANCELLED
-            except Exception as exc:
-                log.exception("scrape job %s failed", job_id)
-                status_, error = STATUS_FAILED, f"{type(exc).__name__}: {exc}"
+                status_, error = STATUS_SUCCEEDED, None
+                try:
+                    if job.mode == MODE_SWEEP:
+                        await self._run_sweep(session, job)
+                    else:
+                        await self._run_idno_list(session, job)
+                except JobCancelled:
+                    status_ = STATUS_CANCELLED
+                except Exception as exc:
+                    log.exception("scrape job %s failed", job_id)
+                    status_, error = STATUS_FAILED, f"{type(exc).__name__}: {exc}"
 
-            await repository.finish_job(session, job, status_, error)
-            await session.commit()
+                await repository.finish_job(session, job, status_, error)
+                await session.commit()
+                log.info(
+                    "job %s %s companies=%d ok=%d fail=%d rows=%d in %s",
+                    tag,
+                    status_,
+                    job.companies_done,
+                    job.requests_ok,
+                    job.requests_failed,
+                    job.rows_loaded,
+                    _elapsed(started),
+                )
+        finally:
+            job_tag.reset(token)
 
     async def _run_idno_list(self, session: AsyncSession, job: ScrapeJob) -> None:
         idnos = [str(value) for value in job.params.get("idnos") or []]
@@ -282,8 +302,15 @@ class ScrapeRunner:
             if job.companies_total is None and body:
                 job.companies_total = total_companies(body)
             await session.commit()
+            log.info(
+                "page %d listing %d companies (register total %s)",
+                page_number,
+                len(idnos),
+                job.companies_total if job.companies_total is not None else "unknown",
+            )
 
             if not idnos:
+                log.info("page %d came back empty, stopping", page_number)
                 break
 
             for position, idno in enumerate(idnos):
@@ -303,6 +330,7 @@ class ScrapeRunner:
             pages_done += 1
             job.cursor = {"page": page_number, "index": 0, "pages_done": pages_done}
             await session.commit()
+            log.info("page %d done (%d/%d)", page_number - 1, pages_done, max_pages)
 
     def _include_depozitar(self, job: ScrapeJob) -> bool:
         return bool(
@@ -318,21 +346,38 @@ class ScrapeRunner:
         idno: str,
         include_depozitar: bool,
     ) -> None:
+        log.info("company %s start", idno)
+        started = time.monotonic()
+        before_ok, before_failed = job.requests_ok, job.requests_failed
+        before_rows = job.rows_loaded
+
         items = list(await self.openmoney.fetch_company(idno))
 
         if include_depozitar:
             index = await self.depozitar.fetch_index(idno)
             items.append(index)
             if index.ok:
-                for declaration_id in declaration_ids(index.fetched.body):
+                declarations = declaration_ids(index.fetched.body)
+                log.info("  %s has %d declarations on file", idno, len(declarations))
+                for declaration_id in declarations:
                     self._check_cancelled(job.id)
                     items.extend(
                         await self.depozitar.fetch_declaration(idno, declaration_id)
                     )
+            else:
+                log.warning("  %s index unavailable (%d)", idno, index.fetched.status)
 
         await self._load(session, job, items)
         await self._transform(session, idno)
         job.companies_done += 1
+        log.info(
+            "company %s done ok=%d fail=%d stored=%d in %s",
+            idno,
+            job.requests_ok - before_ok,
+            job.requests_failed - before_failed,
+            job.rows_loaded - before_rows,
+            _elapsed(started),
+        )
 
     async def _load(
         self, session: AsyncSession, job: ScrapeJob, items: list[Extracted]
@@ -366,6 +411,19 @@ class ScrapeRunner:
         )
         if record.sources:
             await repository.save_company(session, record)
+            log.info(
+                "  transform saved %s from %s: %d people, %d statements",
+                idno,
+                "+".join(record.sources),
+                len(record.people),
+                len(record.statements),
+            )
+        else:
+            log.warning("  transform skipped %s, no usable source body", idno)
+
+
+def _elapsed(started: float) -> str:
+    return f"{time.monotonic() - started:.1f}s"
 
 
 def _body_of(items: list[Extracted], resource: str) -> str | None:

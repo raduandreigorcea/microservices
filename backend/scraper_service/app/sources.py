@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -14,7 +15,10 @@ from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 from playwright.async_api import Error as PlaywrightError
 
 from app.config import Settings
+from app.logs import kb, short_url
 from app.models import SOURCE_DEPOZITAR, SOURCE_OPENMONEY
+
+log = logging.getLogger("scraper_service.browser")
 
 # openmoney
 RESOURCE_COMPANY_PAGE_HTML = "company_page_html"
@@ -80,7 +84,9 @@ class HostThrottle:
         async with lock:
             gap = time.monotonic() - self._last.get(host, 0.0)
             if gap < self._min_interval:
-                await asyncio.sleep(self._min_interval - gap)
+                held_back = self._min_interval - gap
+                log.info("  wait %.1fs for %s", held_back, host)
+                await asyncio.sleep(held_back)
             self._last[host] = time.monotonic()
 
 
@@ -94,6 +100,7 @@ class BrowserPool:
         self._context: BrowserContext | None = None
         self._pages: asyncio.Semaphore | None = None
         self._start_lock = asyncio.Lock()
+        self._open_tabs = 0
         self.throttle = HostThrottle(settings.request_min_interval_seconds)
 
     @property
@@ -121,6 +128,12 @@ class BrowserPool:
                 self._settings.browser_navigation_timeout_ms
             )
             self._pages = asyncio.Semaphore(self._settings.browser_max_pages)
+            log.info(
+                "chromium up (headless=%s, tabs=%d, locale=%s)",
+                self._settings.browser_headless,
+                self._settings.browser_max_pages,
+                self._settings.browser_locale,
+            )
 
     async def stop(self) -> None:
         async with self._start_lock:
@@ -132,37 +145,60 @@ class BrowserPool:
                         pass
             if self._playwright is not None:
                 await self._playwright.stop()
+                log.info("chromium down")
             self._context = self._browser = self._playwright = None
             self._pages = None
+            self._open_tabs = 0
 
     @asynccontextmanager
     async def page(self) -> AsyncIterator[Page]:
         if self._context is None or self._pages is None:
             raise RuntimeError("browser pool is not started")
+        if self._pages.locked():
+            log.info("  queued for a free tab (%d busy)", self._open_tabs)
         async with self._pages:
             page = await self._context.new_page()
+            self._open_tabs += 1
+            log.info(
+                "  tab open (%d/%d busy)",
+                self._open_tabs,
+                self._settings.browser_max_pages,
+            )
             try:
                 yield page
             finally:
+                self._open_tabs -= 1
                 try:
                     await page.close()
                 except PlaywrightError:
                     pass
+                log.info("  tab closed")
 
     async def render(self, page: Page, url: str) -> Fetched:
         """Open a URL in a real tab and keep the DOM once it has settled."""
         await self.throttle.wait(url)
+        log.info("  nav  %s", short_url(url))
+        started = time.monotonic()
         response = await page.goto(url, wait_until="domcontentloaded")
+        settled = "idle"
         try:
             await page.wait_for_load_state("networkidle")
         except PlaywrightError:
             # A page that keeps polling never goes idle. What rendered is enough.
-            pass
+            settled = "still busy"
+        body = await page.content()
+        log.info(
+            "  nav  %s %s after %.1fs, %s",
+            response.status if response is not None else 0,
+            settled,
+            time.monotonic() - started,
+            kb(len(body)),
+        )
         return Fetched(
             url=url,
             status=response.status if response is not None else 0,
             content_type="text/html",
-            body=await page.content(),
+            body=body,
         )
 
     async def get(self, url: str, *, referer: str | None = None) -> Fetched:
@@ -173,17 +209,27 @@ class BrowserPool:
         headers = {"Accept": "application/json"}
         if referer:
             headers["Referer"] = referer
+        started = time.monotonic()
         response = await self._context.request.get(
             url,
             headers=headers,
             timeout=self._settings.browser_request_timeout_ms,
             fail_on_status_code=False,
         )
+        body = await response.text()
+        log.log(
+            logging.INFO if 200 <= response.status < 300 else logging.WARNING,
+            "  get  %d %s %s %.1fs",
+            response.status,
+            short_url(url),
+            kb(len(body)),
+            time.monotonic() - started,
+        )
         return Fetched(
             url=url,
             status=response.status,
             content_type=response.headers.get("content-type"),
-            body=await response.text(),
+            body=body,
         )
 
     async def get_with_retry(self, url: str, *, referer: str | None = None) -> Fetched:
@@ -194,12 +240,18 @@ class BrowserPool:
                 last = await self.get(url, referer=referer)
             except PlaywrightError as exc:
                 if attempt == attempts:
+                    log.warning("  get  failed %s: %s", short_url(url), exc)
                     raise
                 last = Fetched(url=url, status=0, content_type=None, body=str(exc))
+                log.warning("  get  error %s: %s", short_url(url), exc)
             else:
                 if last.status not in RETRYABLE or attempt == attempts:
                     return last
-            await asyncio.sleep(self._settings.request_backoff_seconds * attempt)
+            backoff = self._settings.request_backoff_seconds * attempt
+            log.warning(
+                "  retry %d/%d in %.1fs: %s", attempt, attempts, backoff, short_url(url)
+            )
+            await asyncio.sleep(backoff)
         assert last is not None
         return last
 
