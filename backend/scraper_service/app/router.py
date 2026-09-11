@@ -7,12 +7,13 @@ import uuid
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import text
 
-from app import repository
+from app import repository, service
 from app.config import RedisDep, SessionDep, SettingsDep
 from app.models import FINAL_STATUSES, MODE_IDNO_LIST, MODE_SWEEP
 from app.schemas import (
     CompanyPage,
     CompanyRead,
+    GraphRead,
     JobRead,
     ScrapeByIdnoRequest,
     SourceDataRead,
@@ -174,6 +175,20 @@ async def read_company(idno: str, session: SessionDep, caller: ReadCaller):
             detail="this company has not been scraped yet",
         )
     return company
+
+
+@companies_router.get("/{idno}/graph", response_model=GraphRead)
+async def company_ego_graph(
+    idno: str,
+    session: SessionDep,
+    caller: ReadCaller,
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> GraphRead:
+    """This company, the parties behind it, and where else those parties sit."""
+    edges = await repository.graph_edges(session, idno=idno, limit=limit + 1)
+    truncated = len(edges) > limit
+    nodes, links = service.build_graph(edges[:limit])
+    return GraphRead(nodes=nodes, links=links, truncated=truncated)
 
 
 @companies_router.get("/{idno}/statements/{year}", response_model=StatementRead)

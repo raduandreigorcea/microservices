@@ -1,0 +1,102 @@
+@layer reset, base, layout, components, utilities;
+
+@layer reset {
+  html {
+    box-sizing: border-box;
+    -webkit-text-size-adjust: 100%;
+  }
+  body,
+  h1, h2, h3, h4, p, figure, blockquote, dl, dd, ol, ul, fieldset, legend {
+    margin: 0;
+    padding: 0;
+  }
+  ol, ul {
+    list-style: none;
+  }
+  img, svg, video {
+    display: block;
+    max-inline-size: 100%;
+  }
+  button, input, select, textarea {
+    font: inherit;
+    color: inherit;
+  }
+  table {
+    border-collapse: collapse;
+  }
+}
+
+@layer base {
+  html {
+    /* Percentage keeps the user's browser font-size preference intact. */
+    font-size: 100%;
+    scrollbar-color: var(--paper-300) var(--ink-050);
+  }
+
+  body {
+    background: var(--surface-page);
+    color: var(--text-body);
+    font-family: var(--font-ui);
+    font-size: 1rem;
+    line-height: 1.6;
+    font-feature-settings: "ss01", "cv05";
+    min-block-size: 100dvh;
+    overflow-wrap: break-word;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  h1, h2, h3 {
+    color: var(--text-loud);
+    font-weight: 500;
+    line-height: 1.18;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::placeholder {
+    color: var(--text-faint);
+  }
+
+  input, textarea, select {
+    accent-color: var(--accent);
+  }
+}
+
+@layer utilities {
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* Small caps-ish labels. Kept at readable size with restrained tracking:
+     wide-tracked 10px uppercase is the single most tiring thing in a UI. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+  }
+
+  /* Emphasis inside a heading: a color shift, upright. Inter Tight ships no
+     italic here, so asking for one would get a synthesised slant. */
+  .em {
+    font-style: normal;
+    color: var(--accent);
+  }
+}

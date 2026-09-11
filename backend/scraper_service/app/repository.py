@@ -6,6 +6,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import delete, func, literal_column, select
 from sqlalchemy.dialects.postgresql import insert
@@ -289,3 +290,63 @@ async def get_statement(
     # Prefer the filed declaration over the registry's flattened copy.
     query = query.order_by(FinancialStatement.source.asc())
     return await session.scalar(query.limit(1))
+
+
+# --- ownership graph --------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class GraphEdge:
+    """One company-to-party link, as the source filed it."""
+
+    idno: str
+    company_name: str | None
+    party_key: str
+    party_name: str
+    party_type: str
+    role: str
+    share_percent: Decimal | None
+
+
+async def graph_edges(
+    session: AsyncSession, *, idno: str, limit: int
+) -> list[GraphEdge]:
+    """One company's neighbourhood, as flat rows.
+
+    Its own parties, plus every other company those same parties sit on. That
+    second hop is the whole point: it is what shows a company touching another
+    through a shared founder.
+    """
+    # A party is the same party across companies when the source gives it the
+    # same key. Names alone would merge two different people who happen to
+    # share one, and split one person the source spelled twice.
+    party_key = func.coalesce(CompanyPerson.source_key, CompanyPerson.full_name)
+    of_this_company = select(party_key).where(CompanyPerson.idno == idno)
+
+    rows = await session.execute(
+        select(
+            CompanyPerson.idno,
+            Company.name,
+            party_key.label("party_key"),
+            CompanyPerson.full_name,
+            CompanyPerson.party_type,
+            CompanyPerson.role,
+            CompanyPerson.share_percent,
+        )
+        .join(Company, Company.idno == CompanyPerson.idno)
+        .where(party_key.in_(of_this_company))
+        .order_by(CompanyPerson.idno)
+        .limit(limit)
+    )
+    return [
+        GraphEdge(
+            idno=row[0],
+            company_name=row[1],
+            party_key=row[2],
+            party_name=row[3],
+            party_type=row[4],
+            role=row[5],
+            share_percent=row[6],
+        )
+        for row in rows
+    ]

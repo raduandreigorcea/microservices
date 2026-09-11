@@ -431,3 +431,73 @@ def _body_of(items: list[Extracted], resource: str) -> str | None:
         if item.resource == resource and item.ok:
             return item.fetched.body
     return None
+
+
+# --- ownership graph --------------------------------------------------------
+
+# A company party carries the other company's IDNO as its key, so when that
+# company is already a node we point at it instead of inventing a duplicate.
+COMPANY_PARTY = "COMPANY"
+
+
+def build_graph(edges: list[repository.GraphEdge]) -> tuple[list[dict], list[dict]]:
+    """Turns flat company-to-party rows into nodes and links, deduplicated.
+
+    Every company becomes a node. Every distinct party key becomes one node no
+    matter how many companies it sits on, which is exactly what makes the
+    shared ones show up as hubs.
+    """
+    nodes: dict[str, dict] = {}
+    degree: dict[str, int] = {}
+    links: list[dict] = []
+
+    for edge in edges:
+        company_id = f"c:{edge.idno}"
+        nodes.setdefault(
+            company_id,
+            {
+                "id": company_id,
+                "kind": "company",
+                "label": edge.company_name or edge.idno,
+                "idno": edge.idno,
+            },
+        )
+
+        # A company shareholder resolves to that company's own node when we
+        # hold it, so ownership between two scraped companies draws as one
+        # edge rather than two unrelated blobs.
+        if edge.party_type == COMPANY_PARTY and f"c:{edge.party_key}" in nodes:
+            party_id = f"c:{edge.party_key}"
+        else:
+            party_id = f"p:{edge.party_key}"
+            nodes.setdefault(
+                party_id,
+                {
+                    "id": party_id,
+                    "kind": "company_party"
+                    if edge.party_type == COMPANY_PARTY
+                    else "person",
+                    "label": edge.party_name,
+                    "idno": edge.party_key if edge.party_type == COMPANY_PARTY else None,
+                    "role": edge.role,
+                },
+            )
+
+        if party_id == company_id:
+            continue  # a company listed as its own founder; nothing to draw
+
+        links.append(
+            {
+                "source": company_id,
+                "target": party_id,
+                "role": edge.role,
+                "share_percent": edge.share_percent,
+            }
+        )
+        degree[company_id] = degree.get(company_id, 0) + 1
+        degree[party_id] = degree.get(party_id, 0) + 1
+
+    for node_id, node in nodes.items():
+        node["degree"] = degree.get(node_id, 0)
+
+    return list(nodes.values()), links

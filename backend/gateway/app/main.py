@@ -35,7 +35,7 @@ HOP_BY_HOP = frozenset(
 RESPONSE_DROP = HOP_BY_HOP | {"content-encoding"}
 
 # Who the caller is, as decided here. Stripped off the incoming request first,
-# so nobody can walk in claiming to be an admin.
+# so nobody can walk in claiming an identity or a scope they were not granted.
 IDENTITY_HEADERS = ("x-user-id", "x-user-email", "x-user-role", "x-user-scopes")
 
 PROXY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]

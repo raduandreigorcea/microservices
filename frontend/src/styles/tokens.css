@@ -1,0 +1,81 @@
+/* Tier 1: literal tokens. Tier 2 gives them a job. Nothing else exists. */
+
+:root {
+  color-scheme: dark;
+
+  /* --- ink: the page, darkest first -------------------------------------
+     Deliberately not black. A near-black with a little warmth in it lowers
+     the contrast against the text, which is what makes a dark UI restful
+     rather than glaring. */
+  --ink-000: #141413;
+  --ink-050: #191918;
+  --ink-100: #1f1f1d;
+  --ink-200: #262624;
+  --ink-300: #30302d;
+
+  /* --- paper: text, brightest first --------------------------------------
+     The top end stops well short of white: pure white on near-black is the
+     other half of the glare. */
+  --paper-000: #e4e4dc;
+  --paper-100: #c0c0b6;
+  --paper-200: #8f8f85;
+  --paper-300: #6b6b63;
+
+  /* --- signal ------------------------------------------------------------
+     Muted on purpose. High-chroma colors vibrate against a dark ground and
+     are tiring to sit in front of, so each of these keeps its hue and gives
+     up most of its saturation. */
+  --lime: #c6dd8a;
+  --amber: #ddb877;
+  --rose: #dd8d7e;
+  --sky: #8fbdd4;
+
+  /* --- type --------------------------------------------------------------
+     Two families, no third. Emphasis is carried by color, not by a switch
+     into another typeface. */
+  --font-ui: "Inter Tight", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* --- rhythm ------------------------------------------------------------ */
+  --gutter: clamp(1rem, 0.4rem + 2.4vw, 3rem);
+  --shell-max: 84rem;
+
+  /* --- motion ------------------------------------------------------------ */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --beat: 0.22s;
+  --phrase: 0.5s;
+}
+
+/* Tier 2: semantic. These are the only names components should reach for. */
+:root {
+  --surface-page: var(--ink-000);
+  --surface-sunken: var(--ink-050);
+  --surface-card: var(--ink-100);
+  --surface-raised: var(--ink-200);
+
+  --text-loud: var(--paper-000);
+  --text-body: var(--paper-100);
+  --text-muted: var(--paper-200);
+  --text-faint: var(--paper-300);
+
+  --accent: var(--lime);
+  --accent-ink: var(--ink-000);
+
+  /* Lifted to hold their own against the lighter page. */
+  --line: color-mix(in oklab, var(--paper-000) 14%, transparent);
+  --line-strong: color-mix(in oklab, var(--paper-000) 26%, transparent);
+  --line-accent: color-mix(in oklab, var(--accent) 45%, transparent);
+
+  --focus-ring: var(--accent);
+}
+
+/* Gradients need an explicit interpolation space, but only where it parses. */
+:root {
+  --in-oklab: ;
+}
+@supports (background: linear-gradient(in oklab, white, black)) {
+  :root {
+    --in-oklab: in oklab;
+  }
+}
