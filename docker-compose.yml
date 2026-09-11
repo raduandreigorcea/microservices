@@ -100,6 +100,44 @@ services:
     networks:
       - backend
 
+  app_service:
+    build: ./backend/app_service
+    restart: unless-stopped
+    environment:
+      USER_SERVICE_URL: http://user_service:8002
+      SCRAPER_SERVICE_URL: http://scraper_service:8003
+      UVICORN_ARGS: "--reload"
+    ports:
+      - "${APP_SERVICE_PORT:-8001}:8001"
+    volumes:
+      - ./backend/app_service/app:/service/app
+    depends_on:
+      user_service:
+        condition: service_started
+      scraper_service:
+        condition: service_started
+    networks:
+      - backend
+
+  gateway:
+    build: ./backend/gateway
+    restart: unless-stopped
+    environment:
+      APP_SERVICE_URL: http://app_service:8001
+      USER_SERVICE_URL: http://user_service:8002
+      UVICORN_ARGS: "--reload"
+    ports:
+      - "${GATEWAY_PORT:-8000}:8000"
+    volumes:
+      - ./backend/gateway/app:/service/app
+    depends_on:
+      app_service:
+        condition: service_started
+      user_service:
+        condition: service_started
+    networks:
+      - backend
+
 volumes:
   postgres_data:
   redis_data:
