@@ -11,15 +11,17 @@ from sqlalchemy.pool import NullPool
 from app.models import Base
 
 
-def _selector_loop():
-    return asyncio.SelectorEventLoop(selectors.SelectSelector())
+# Only defined on Windows: pytest-asyncio rejects an implementation of this
+# hook that returns nothing, so everywhere else it must stay unregistered and
+# let the default loop be used.
+if sys.platform == "win32":
 
+    def _selector_loop():
+        return asyncio.SelectorEventLoop(selectors.SelectSelector())
 
-def pytest_asyncio_loop_factories(config, item):
-    """psycopg's async mode refuses the Proactor loop Windows defaults to."""
-    if sys.platform == "win32":
+    def pytest_asyncio_loop_factories(config, item):
+        """psycopg's async mode refuses the Proactor loop Windows defaults to."""
         return {"selector": _selector_loop}
-    return None
 
 
 # One database for everything. Tests get their own schema inside it so a test
