@@ -59,6 +59,9 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_REDIRECT_URI: http://localhost:${USER_SERVICE_PORT:-8002}/auth/google/callback
+      # Where the browser lands after Google says yes. The frontend reads the
+      # token pair out of the fragment and clears it from the address bar.
+      LOGIN_SUCCESS_REDIRECT: ${LOGIN_SUCCESS_REDIRECT:-http://localhost:5173/}
       UVICORN_ARGS: "--reload"
     ports:
       - "${USER_SERVICE_PORT:-8002}:8002"

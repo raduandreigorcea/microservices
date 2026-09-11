@@ -33,20 +33,23 @@ from app.schemas import IntrospectResponse, TokenPair
 
 SCOPE_DESCRIPTIONS = {
     "users:read": "Read your own profile and sessions",
-    "users:write": "Manage other users",
     "scrape:read": "Read scraped company data",
     "scrape:write": "Trigger new scrapes",
-    "admin": "Administrative access",
 }
 
+DEFAULT_ROLE = "user"
+
+# One role, and it holds every scope there is. The mapping stays because the
+# scopes are what the services actually enforce; a second role would be added
+# here and nowhere else.
 ROLE_SCOPES: dict[str, tuple[str, ...]] = {
-    "user": ("users:read", "scrape:read", "scrape:write"),
-    "admin": tuple(SCOPE_DESCRIPTIONS),
+    DEFAULT_ROLE: tuple(SCOPE_DESCRIPTIONS),
 }
 
 
 def scopes_for_role(role: str) -> tuple[str, ...]:
-    return ROLE_SCOPES.get(role, ROLE_SCOPES["user"])
+    """Unknown roles, including any left over in the database, get the default."""
+    return ROLE_SCOPES.get(role, ROLE_SCOPES[DEFAULT_ROLE])
 
 
 # --- tokens and PKCE -------------------------------------------------------
@@ -149,6 +152,13 @@ TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 JWKS_URI = "https://www.googleapis.com/oauth2/v3/certs"
 ISSUERS = ("https://accounts.google.com", "accounts.google.com")
 
+# Google stamps `iat` from its own clock. Ours is never exactly the same, and
+# a container's drifts further every time the host sleeps. Without any grace a
+# clock a single second behind Google's rejects a perfectly good token as "not
+# yet valid". Google's own library allows ten seconds; thirty costs nothing
+# against a token that lives an hour.
+CLOCK_SKEW_SECONDS = 30
+
 # Identity only. We never ask for access to the user's Google data.
 GOOGLE_SCOPES = "openid email profile"
 
@@ -224,7 +234,11 @@ class GoogleOAuthClient:
         try:
             key = self._jwks.get_signing_key_from_jwt(id_token).key
             claims = jwt.decode(
-                id_token, key, algorithms=["RS256"], audience=self._client_id
+                id_token,
+                key,
+                algorithms=["RS256"],
+                audience=self._client_id,
+                leeway=CLOCK_SKEW_SECONDS,
             )
         except Exception as exc:
             raise GoogleAuthError(f"id_token failed verification: {exc}") from exc

@@ -160,3 +160,30 @@ class SourceDataRead(BaseModel):
     body_sha256: str
     first_seen_at: datetime
     last_seen_at: datetime
+
+
+# --- ownership graph --------------------------------------------------------
+
+
+class GraphNode(BaseModel):
+    """A company or a party. `id` is what the edges point at."""
+
+    id: str
+    kind: str
+    label: str
+    idno: str | None = None
+    role: str | None = None
+    degree: int = 0
+
+
+class GraphLink(BaseModel):
+    source: str
+    target: str
+    role: str
+    share_percent: Decimal | None = None
+
+
+class GraphRead(BaseModel):
+    nodes: list[GraphNode]
+    links: list[GraphLink]
+    truncated: bool
