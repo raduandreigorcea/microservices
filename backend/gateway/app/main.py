@@ -41,6 +41,23 @@ IDENTITY_HEADERS = ("x-user-id", "x-user-email", "x-user-role", "x-user-scopes")
 PROXY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
 
 
+def _relay(upstream: httpx.Response) -> Response:
+    """Copies the answer back, keeping repeated Set-Cookie headers separate."""
+    response = Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers={
+            key: value
+            for key, value in upstream.headers.items()
+            if key.lower() not in RESPONSE_DROP and key.lower() != "set-cookie"
+        },
+    )
+    for key, value in upstream.headers.multi_items():
+        if key.lower() == "set-cookie":
+            response.raw_headers.append((b"set-cookie", value.encode("latin-1")))
+    return response
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -115,7 +132,10 @@ def create_app() -> FastAPI:
             target_path == prefix or target_path.startswith(f"{prefix}/")
             for prefix in settings.public_prefix_list
         ):
-            claims = await authenticate(request, client, settings)
+            token, claims = await authenticate(request, client, settings)
+            # Normalised on the way in: a browser may have arrived with only a
+            # cookie, but everything behind this door sees a bearer header.
+            headers["authorization"] = f"Bearer {token}"
             headers["x-user-id"] = str(claims.get("sub") or "")
             headers["x-user-email"] = str(claims.get("email") or "")
             headers["x-user-role"] = str(claims.get("role") or "")
@@ -135,15 +155,7 @@ def create_app() -> FastAPI:
                 detail="app_service could not be reached",
             ) from exc
 
-        return Response(
-            content=upstream.content,
-            status_code=upstream.status_code,
-            headers={
-                key: value
-                for key, value in upstream.headers.items()
-                if key.lower() not in RESPONSE_DROP
-            },
-        )
+        return _relay(upstream)
 
     return app
 

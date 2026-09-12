@@ -1,11 +1,11 @@
 /** The only place that talks to the gateway.
  *
- * Every call carries the bearer token. A 401 buys exactly one refresh attempt,
- * shared between concurrent callers, and then one retry. If that fails the
- * session is dropped and the app falls back to the gate.
+ * Nothing here holds a token. The pair lives in httpOnly cookies the browser
+ * attaches on its own, which is why script cannot read it and an XSS bug
+ * cannot walk off with a session. A 401 buys exactly one refresh attempt,
+ * shared between concurrent callers, and then one retry.
  */
 
-import { fromPair, getTokens, setTokens } from "./session";
 import type {
   Company,
   CompanyPage,
@@ -14,7 +14,6 @@ import type {
   JobStatus,
   SourceData,
   Statement,
-  TokenPair,
   User,
 } from "./types";
 
@@ -60,22 +59,17 @@ async function parse(response: Response): Promise<unknown> {
 
 let refreshing: Promise<boolean> | null = null;
 
-/** Trades the refresh token for a new pair. At most one runs at a time. */
+/** Rotates the pair. The cookies go up and come back down on their own. */
 async function refreshSession(): Promise<boolean> {
   if (refreshing) return refreshing;
 
   refreshing = (async () => {
-    const tokens = getTokens();
-    if (!tokens?.refresh) return false;
     try {
       const response = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ refresh_token: tokens.refresh }),
+        credentials: "same-origin",
       });
-      if (!response.ok) return false;
-      setTokens(fromPair((await response.json()) as TokenPair));
-      return true;
+      return response.ok;
     } catch {
       return false;
     } finally {
@@ -114,8 +108,6 @@ export async function request<T>(
   }
 
   const headers: Record<string, string> = { accept: "application/json" };
-  const tokens = getTokens();
-  if (tokens?.access) headers.authorization = `Bearer ${tokens.access}`;
   if (body !== undefined) headers["content-type"] = "application/json";
 
   let response: Response;
@@ -124,6 +116,7 @@ export async function request<T>(
       method,
       headers,
       signal,
+      credentials: "same-origin",
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch (error) {
@@ -135,7 +128,6 @@ export async function request<T>(
     if (await refreshSession()) {
       return request<T>(path, { ...options, retried: true });
     }
-    setTokens(null);
   }
 
   if (!response.ok) {
@@ -155,11 +147,8 @@ export async function request<T>(
 export const api = {
   me: () => request<User>("/users/me"),
 
-  logout: (refreshToken: string) =>
-    request<null>("/auth/logout", {
-      method: "POST",
-      body: { refresh_token: refreshToken },
-    }),
+  /** The refresh cookie says which session to end, so there is no body. */
+  logout: () => request<null>("/auth/logout", { method: "POST" }),
 
   companies: (params: { search?: string; limit?: number; offset?: number }) =>
     request<CompanyPage>("/companies", { query: params }),

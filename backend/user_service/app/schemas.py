@@ -35,11 +35,15 @@ class TokenPair(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    """A browser sends nothing: the token rides in an httpOnly cookie."""
+
+    refresh_token: str | None = None
 
 
 class LogoutRequest(BaseModel):
-    refresh_token: str
+    """A browser sends nothing: the token rides in an httpOnly cookie."""
+
+    refresh_token: str | None = None
 
 
 class IntrospectRequest(BaseModel):

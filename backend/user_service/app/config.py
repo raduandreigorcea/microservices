@@ -47,6 +47,25 @@ class Settings(BaseSettings):
     oauth_state_prefix: str = "user_service:oauth_state:"
     oauth_state_ttl_seconds: int = 600
 
+    # --- cookies ---
+    # The browser gets its tokens as httpOnly cookies, which script cannot
+    # read, so an XSS bug in the frontend cannot walk off with a session.
+    # Non-browser callers keep using the Authorization header.
+    access_cookie_name: str = "access_token"
+    refresh_cookie_name: str = "refresh_token"
+    # Off in dev, because localhost is plain HTTP. Turn it on everywhere else.
+    cookie_secure: bool = False
+    # "lax" still sends the cookie on the top-level redirect back from Google,
+    # while withholding it from cross-site form posts, which is the CSRF case
+    # that matters here.
+    cookie_samesite: str = "lax"
+    # Empty means host-only. Set it to the shared parent when the frontend and
+    # the API live on different subdomains.
+    cookie_domain: str = ""
+    # Root, not /auth: nginx serves the API under /api, so a narrower path
+    # would never match the request the browser actually makes.
+    cookie_path: str = "/"
+
 
 @lru_cache
 def get_settings() -> Settings:

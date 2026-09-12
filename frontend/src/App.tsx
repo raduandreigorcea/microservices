@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { Shell } from "./components/Shell";
-import { useAuth, useHashTokens } from "./lib/auth";
+import { useAuth } from "./lib/auth";
 import { Companies } from "./routes/Companies";
 import { Company } from "./routes/Company";
 import { Gate } from "./routes/Gate";
@@ -13,12 +13,9 @@ import { Statement } from "./routes/Statement";
 import { Empty } from "./components/bits";
 
 export function App() {
-  // The callback drops the token pair in the fragment; claim it before
-  // deciding whether anyone is signed in.
-  const claimed = useHashTokens();
   const { status } = useAuth();
 
-  if (!claimed || status === "loading") return <Booting />;
+  if (status === "loading") return <Booting />;
   if (status !== "signed-in") return <Gate />;
 
   return (

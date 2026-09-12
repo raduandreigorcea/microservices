@@ -60,6 +60,23 @@ def route_for(path: str) -> str | None:
     return None
 
 
+def _relay(upstream: httpx.Response) -> Response:
+    """Copies the answer back, keeping repeated Set-Cookie headers separate."""
+    response = Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers={
+            key: value
+            for key, value in upstream.headers.items()
+            if key.lower() not in RESPONSE_DROP and key.lower() != "set-cookie"
+        },
+    )
+    for key, value in upstream.headers.multi_items():
+        if key.lower() == "set-cookie":
+            response.raw_headers.append((b"set-cookie", value.encode("latin-1")))
+    return response
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -145,15 +162,7 @@ def create_app() -> FastAPI:
                 detail=f"{service} could not be reached",
             ) from exc
 
-        return Response(
-            content=upstream.content,
-            status_code=upstream.status_code,
-            headers={
-                key: value
-                for key, value in upstream.headers.items()
-                if key.lower() not in RESPONSE_DROP
-            },
-        )
+        return _relay(upstream)
 
     return app
 

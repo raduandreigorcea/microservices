@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import text
 
 from app import repository, service
@@ -70,36 +70,58 @@ async def google_callback(
     pair = await service.complete_authorization(
         session, redis, settings, google, request, state=state, code=code, error=error
     )
+    # The browser leaves with httpOnly cookies and nothing in the URL, so the
+    # tokens never reach script, browser history, or a referer header. Callers
+    # that are not browsers get the pair in the body and use the header.
     if settings.login_success_redirect:
-        return RedirectResponse(
-            f"{settings.login_success_redirect}"
-            f"#access_token={pair.access_token}&refresh_token={pair.refresh_token}",
-            status_code=status.HTTP_303_SEE_OTHER,
+        response: Response = RedirectResponse(
+            settings.login_success_redirect, status_code=status.HTTP_303_SEE_OTHER
         )
-    return pair
+    else:
+        response = JSONResponse(pair.model_dump())
+    service.set_auth_cookies(response, pair, settings)
+    return response
 
 
 @auth_router.post("/refresh", response_model=TokenPair)
 async def refresh(
     request: Request,
-    payload: RefreshRequest,
     session: SessionDep,
     settings: SettingsDep,
-) -> TokenPair:
-    return await service.rotate_refresh_token(
-        session, settings, request, payload.refresh_token
+    payload: RefreshRequest | None = None,
+) -> Response:
+    raw = (payload.refresh_token if payload else None) or service.cookie_value(
+        request, settings.refresh_cookie_name
     )
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="no refresh token in the body or the cookie",
+        )
+    pair = await service.rotate_refresh_token(session, settings, request, raw)
+    response = JSONResponse(pair.model_dump())
+    service.set_auth_cookies(response, pair, settings)
+    return response
 
 
 @auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    payload: LogoutRequest,
+    request: Request,
     session: SessionDep,
     redis: RedisDep,
     settings: SettingsDep,
     identity: service.CurrentIdentity,
-) -> None:
-    await service.log_out(session, redis, settings, identity, payload.refresh_token)
+    payload: LogoutRequest | None = None,
+) -> Response:
+    raw = (payload.refresh_token if payload else None) or service.cookie_value(
+        request, settings.refresh_cookie_name
+    )
+    # A missing refresh token still denies the access token, so a browser that
+    # lost its cookie can still end the session it is holding.
+    await service.log_out(session, redis, settings, identity, raw or "")
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    service.clear_auth_cookies(response, settings)
+    return response
 
 
 @auth_router.post("/introspect", response_model=IntrospectResponse)

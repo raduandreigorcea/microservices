@@ -20,16 +20,22 @@ _cache: dict[str, tuple[float, dict]] = {}
 UNAUTHENTICATED = {"WWW-Authenticate": "Bearer"}
 
 
-def _bearer(request: Request) -> str:
+def _bearer(request: Request, settings: Settings) -> str:
+    """The header first, then the cookie a browser was given at login."""
     header = request.headers.get("authorization", "")
     scheme, _, token = header.partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="this route needs a bearer token",
-            headers=UNAUTHENTICATED,
-        )
-    return token.strip()
+    if scheme.lower() == "bearer" and token.strip():
+        return token.strip()
+
+    from_cookie = request.cookies.get(settings.access_cookie_name, "").strip()
+    if from_cookie:
+        return from_cookie
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="this route needs a bearer token",
+        headers=UNAUTHENTICATED,
+    )
 
 
 def _remember(token: str, payload: dict, settings: Settings, now: float) -> None:
@@ -68,13 +74,19 @@ async def introspect(
 
 async def authenticate(
     request: Request, client: httpx.AsyncClient, settings: Settings
-) -> dict:
-    """Returns the introspection body, or raises 401."""
-    payload = await introspect(client, settings, _bearer(request))
+) -> tuple[str, dict]:
+    """Returns the token and the introspection body, or raises 401.
+
+    The token comes back so the proxy can put it in an Authorization header on
+    the way inward: a cookie is a browser detail, and no service behind the
+    gateway should have to know about it.
+    """
+    token = _bearer(request, settings)
+    payload = await introspect(client, settings, token)
     if not payload.get("active"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="the token is expired, revoked or unknown",
             headers=UNAUTHENTICATED,
         )
-    return payload
+    return token, payload

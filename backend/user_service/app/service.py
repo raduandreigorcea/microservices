@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 
 import httpx
 import jwt
-from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi import Depends, HTTPException, Request, Response, Security, status
 from fastapi.security import (
     HTTPAuthorizationCredentials,
     HTTPBearer,
@@ -143,6 +143,46 @@ def new_pkce_pair() -> PkcePair:
 def new_oauth_state() -> str:
     """Opaque value tying an authorization redirect to its callback."""
     return secrets.token_urlsafe(32)
+
+
+# --- cookies ---------------------------------------------------------------
+
+
+def set_auth_cookies(response: Response, pair: TokenPair, settings: Settings) -> None:
+    """Hands the pair to a browser in a form script cannot read."""
+    common = {
+        "httponly": True,
+        "secure": settings.cookie_secure,
+        "samesite": settings.cookie_samesite,
+        "path": settings.cookie_path,
+        "domain": settings.cookie_domain or None,
+    }
+    response.set_cookie(
+        settings.access_cookie_name,
+        pair.access_token,
+        max_age=settings.access_token_ttl_seconds,
+        **common,
+    )
+    response.set_cookie(
+        settings.refresh_cookie_name,
+        pair.refresh_token,
+        max_age=settings.refresh_token_ttl_seconds,
+        **common,
+    )
+
+
+def clear_auth_cookies(response: Response, settings: Settings) -> None:
+    for name in (settings.access_cookie_name, settings.refresh_cookie_name):
+        response.delete_cookie(
+            name,
+            path=settings.cookie_path,
+            domain=settings.cookie_domain or None,
+        )
+
+
+def cookie_value(request: Request, name: str) -> str | None:
+    value = request.cookies.get(name)
+    return value.strip() if value and value.strip() else None
 
 
 # --- Google ----------------------------------------------------------------
@@ -286,13 +326,18 @@ bearer_scheme = HTTPBearer(
 
 
 async def get_bearer_token(
+    request: Request,
+    settings: SettingsDep,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
     ],
 ) -> str:
-    if credentials is None:
+    if credentials is not None:
+        return credentials.credentials
+    from_cookie = cookie_value(request, settings.access_cookie_name)
+    if from_cookie is None:
         raise _unauthorised("not authenticated")
-    return credentials.credentials
+    return from_cookie
 
 
 @dataclass(frozen=True)

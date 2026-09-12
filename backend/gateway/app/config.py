@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     introspection_cache_ttl_seconds: float = Field(default=30.0, ge=0)
     introspection_cache_max_entries: int = Field(default=1024, gt=0)
 
+    # Browsers carry the access token here instead of in a header, because an
+    # httpOnly cookie is not readable by script. Set by user_service on login.
+    access_cookie_name: str = "access_token"
+
     # Paths under these prefixes pass through without a token: they are how a
     # caller gets one in the first place, plus the gateway's own pages.
     public_prefixes: str = "/auth,/health,/docs,/redoc,/openapi.json"
