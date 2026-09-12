@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 990" width="800" height="990" role="img" aria-label="The ELT pipeline: public sources are fetched by a Playwright browser pool, stored verbatim in source_data, transformed into transformed_data and its child tables, and finally projected into neo4j.">
+  <title>The ELT pipeline: public sources are fetched by a Playwright browser pool, stored verbatim in source_data, transformed into transformed_data and its child tables, and finally projected into neo4j.</title>
+  <defs>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+  <rect width="800" height="990" fill="#ffffff"/>
+  <polyline points="515.0,116 515.0,180" fill="none" stroke="#1d4ed8" stroke-width="1.7" stroke-linejoin="round" marker-end="url(#arrow-blue)"/>
+  <text x="527.0" y="152" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="500" fill="#1d4ed8" text-anchor="start">raw HTML and JSON</text>
+  <polyline points="515.0,270 515.0,340" fill="none" stroke="#1d4ed8" stroke-width="1.7" stroke-linejoin="round" marker-end="url(#arrow-blue)"/>
+  <text x="527.0" y="309" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="500" fill="#1d4ed8" text-anchor="start">stored verbatim, before anything reads it</text>
+  <polyline points="515.0,430 515.0,500" fill="none" stroke="#1d4ed8" stroke-width="1.7" stroke-linejoin="round" marker-end="url(#arrow-blue)"/>
+  <text x="527.0" y="469" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="500" fill="#1d4ed8" text-anchor="start">latest body per resource</text>
+  <polyline points="515.0,590 515.0,660" fill="none" stroke="#1d4ed8" stroke-width="1.7" stroke-linejoin="round" marker-end="url(#arrow-blue)"/>
+  <text x="527.0" y="629" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="500" fill="#1d4ed8" text-anchor="start">typed records, one company at a time</text>
+  <polyline points="515.0,756 515.0,826" fill="none" stroke="#1d4ed8" stroke-width="1.7" stroke-linejoin="round" marker-end="url(#arrow-blue)"/>
+  <text x="527.0" y="795" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="500" fill="#1d4ed8" text-anchor="start">projected after the postgres commit</text>
+  <rect x="300" y="40" width="430" height="76" rx="8" fill="#fff7ed" stroke="#b45309" stroke-width="1.6" stroke-dasharray="5 4"/>
+  <text x="515.0" y="75.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#0f172a" text-anchor="middle">public sources</text>
+  <text x="515.0" y="92.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#475569" text-anchor="middle">openmoney.md  ·  depozitar.statistica.md</text>
+  <rect x="300" y="180" width="430" height="90" rx="8" fill="#eef2ff" stroke="#3730a3" stroke-width="1.6"/>
+  <text x="515.0" y="214.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#0f172a" text-anchor="middle">BrowserPool  (Playwright Chromium)</text>
+  <text x="515.0" y="231.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#475569" text-anchor="middle">one page per host, throttled and retried,</text>
+  <text x="515.0" y="246.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#475569" text-anchor="middle">rendered HTML captured as fetched</text>
+  <rect x="300" y="340" width="430" height="90" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.6"/>
+  <text x="515.0" y="374.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#0f172a" text-anchor="middle">source_data</text>
+  <text x="515.0" y="391.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#475569" text-anchor="middle">one row per request: url, status, body,</text>
+  <text x="515.0" y="406.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#475569" text-anchor="middle">fetched_at, job_id  ·  never edited</text>
+  <rect x="300" y="500" width="430" height="90" rx="8" fill="#eef2ff" stroke="#3730a3" stroke-width="1.6"/>
+  <text x="515.0" y="534.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#0f172a" text-anchor="middle">build_company</text>
+  <text x="515.0" y="551.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#475569" text-anchor="middle">reads the latest body per resource,</text>
+  <text x="515.0" y="566.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#475569" text-anchor="middle">parses and cleans into typed records</text>
+  <rect x="300" y="660" width="430" height="96" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.6"/>
+  <text x="515.0" y="697.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#0f172a" text-anchor="middle">transformed_data</text>
+  <text x="515.0" y="714.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#475569" text-anchor="middle">+ company_people, financial_statements,</text>
+  <text x="515.0" y="729.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#475569" text-anchor="middle">financial_line_items  ·  upserted by IDNO</text>
+  <rect x="300" y="826" width="430" height="86" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.6"/>
+  <text x="515.0" y="858.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#0f172a" text-anchor="middle">neo4j</text>
+  <text x="515.0" y="875.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#475569" text-anchor="middle">Company and Person nodes,</text>
+  <text x="515.0" y="890.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#475569" text-anchor="middle">FOUNDER / ADMINISTRATOR edges</text>
+  <path d="M 230 180 L 218 180 L 218 270 L 230 270" fill="none" stroke="#64748b" stroke-width="1.4"/>
+  <text x="206" y="229.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#64748b" text-anchor="end">extract</text>
+  <path d="M 230 340 L 218 340 L 218 430 L 230 430" fill="none" stroke="#64748b" stroke-width="1.4"/>
+  <text x="206" y="389.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#64748b" text-anchor="end">load</text>
+  <path d="M 230 500 L 218 500 L 218 756 L 230 756" fill="none" stroke="#64748b" stroke-width="1.4"/>
+  <text x="206" y="632.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#64748b" text-anchor="end">transform</text>
+  <path d="M 230 826 L 218 826 L 218 912 L 230 912" fill="none" stroke="#64748b" stroke-width="1.4"/>
+  <text x="206" y="873.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" fill="#64748b" text-anchor="end">project</text>
+  <text x="40" y="28" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#0f172a" text-anchor="start">microservices-web-app  ·  the ELT pipeline</text>
+  <text x="40" y="950" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#64748b" text-anchor="start">Each job runs as a background asyncio task: POST /scrape/jobs/{id}/cancel stops it mid-flight.</text>
+  <text x="40" y="968" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="normal" fill="#64748b" text-anchor="start">Postgres holds the truth, so POST /scrape/reproject rebuilds the whole neo4j graph from the tables alone.</text>
+</svg>

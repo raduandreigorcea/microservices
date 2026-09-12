@@ -72,7 +72,7 @@ export function NewScrape() {
             className={`nav__link${mode === "sweep" ? " is-active" : ""}`}
             onClick={() => setMode("sweep")}
           >
-            sweep registru
+            registru sweep
           </button>
         </div>
       </section>

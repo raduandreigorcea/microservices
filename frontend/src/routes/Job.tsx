@@ -71,7 +71,7 @@ export function Job() {
             <Skeleton w="45%" h="1em" />
           ) : data?.mode === "sweep" ? (
             <>
-              Sweep <em className="em">registru</em>
+              Registru <em className="em">sweep</em>
             </>
           ) : (
             <>

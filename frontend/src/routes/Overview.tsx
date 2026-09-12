@@ -134,7 +134,7 @@ export function Overview() {
                   </span>
                   <span>
                     <span className="row__name">
-                      {job.mode === "sweep" ? "Sweep registru" : "Listă IDNO"}
+                      {job.mode === "sweep" ? "Registru sweep" : "Listă IDNO"}
                     </span>
                     <span className="row__meta">
                       <span>{ago(job.created_at)}</span>
